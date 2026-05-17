@@ -1,7 +1,8 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
+from scipy import stats
 
-# ── Configuración de la página ──
 st.set_page_config(
     page_title="Simulación Gasolinera Shell",
     page_icon="⛽",
@@ -11,25 +12,133 @@ st.set_page_config(
 st.title("⛽ Gasolinera Shell — Análisis para Simulación")
 st.markdown("Carga el archivo Excel estandarizado para obtener los parámetros del modelo en Simio.")
 
-# ── Carga del archivo ──
 archivo = st.file_uploader("Selecciona el archivo Excel", type=["xlsx"])
 
 if archivo:
     st.success(f"Archivo cargado: {archivo.name}")
-    
-    # Leer las hojas
-    as_df   = pd.read_excel(archivo, sheet_name="Autoservicio")
-    sc_df   = pd.read_excel(archivo, sheet_name="Servicio_Completo")
-    sh_df   = pd.read_excel(archivo, sheet_name="Shell_Select")
-    cfg_df  = pd.read_excel(archivo, sheet_name="Configuracion")
 
-    st.write("### Vista previa — Autoservicio")
-    st.dataframe(as_df)
+    as_df = pd.read_excel(archivo, sheet_name="Autoservicio",      header=1)
+    sc_df = pd.read_excel(archivo, sheet_name="Servicio_Completo", header=1)
+    sh_df = pd.read_excel(archivo, sheet_name="Shell_Select",      header=1)
 
-    st.write("### Vista previa — Servicio Completo")
-    st.dataframe(sc_df)
+    # ── Funciones base ──
+    def promedio(serie):
+        datos = serie.dropna()
+        datos = datos[datos > 0]
+        return round(datos.mean(), 2)
 
-    st.write("### Vista previa — Shell Select")
-    st.dataframe(sh_df)
+    def tasa_llegada_total(df):
+
+        tasas = []
+        for bomba, grupo in df.groupby("Bomba"):
+            tiempos = grupo["T. Llegada (s)"].dropna()
+            tiempos = tiempos[tiempos > 0]
+            if len(tiempos) > 0:
+                media_bomba = tiempos.mean()
+                tasas.append(1 / media_bomba)
+        tasa_total = sum(tasas)
+        interarrival = round(1 / tasa_total, 2)
+        return interarrival
+
+    def prueba_ks(serie):
+
+        datos = serie.dropna()
+        datos = datos[datos > 0].values
+        media = datos.mean()
+        stat, p_valor = stats.kstest(datos, 'expon', args=(0, media))
+        return round(stat, 4), round(p_valor, 4)
+
+    # ── Inter-arrival por sistema ──
+    mu_arr_as = tasa_llegada_total(as_df)
+    mu_arr_sc = tasa_llegada_total(sc_df)
+
+    ks_as, p_as = prueba_ks(as_df["T. Llegada (s)"])
+    ks_sc, p_sc = prueba_ks(sc_df["T. Llegada (s)"])
+
+    # ── Pago PATS ──
+    mu_pago = promedio(as_df["T. Pago PATS (s)"])
+
+    # ── Bombeo AS por tipo de vehículo ──
+    tipos = ["moto", "sedan", "camioneta", "pick_up"]
+    bombeo_as = {}
+    for tipo in tipos:
+        filtro = as_df[as_df["Tipo Vehículo"] == tipo]["T. Bombeo (s)"]
+        bombeo_as[tipo] = promedio(filtro)
+
+    # ── Tiempo total SC por tipo de vehículo ──
+    tiempo_sc = {}
+    for tipo in tipos:
+        filtro = sc_df[sc_df["Tipo Vehículo"] == tipo]["T. Total Servicio (s)"]
+        tiempo_sc[tipo] = promedio(filtro)
+
+    # ── Shell Select ──
+    mu_shell = promedio(sh_df["T. Estancia (s)"])
+
+    # ── Proporciones de tipo de vehículo ──
+    prop_as = (as_df["Tipo Vehículo"].value_counts(normalize=True) * 100).round(1)
+    prop_sc = (sc_df["Tipo Vehículo"].value_counts(normalize=True) * 100).round(1)
+
+    # ── Mostrar resultados ──
+    st.divider()
+    st.subheader("📊 Parámetros para Simio")
+    st.caption("Todos los tiempos en segundos · Expresión Simio: Random.Exponential(promedio)")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("**🔵 Autoservicio — Llegadas**")
+        tabla_arr_as = pd.DataFrame([
+            ["Inter-arrival AS", mu_arr_as, f"Random.Exponential({mu_arr_as})"],
+        ], columns=["Variable", "Promedio (s)", "Expresión Simio"])
+        st.dataframe(tabla_arr_as, hide_index=True, use_container_width=True)
+
+        st.markdown("**🔵 Autoservicio — Pago y Bombeo**")
+        tabla_as = pd.DataFrame([
+            ["Tiempo Pago PATS", mu_pago, f"Random.Exponential({mu_pago})"],
+        ], columns=["Variable", "Promedio (s)", "Expresión Simio"])
+        st.dataframe(tabla_as, hide_index=True, use_container_width=True)
+
+        st.markdown("**🔵 Autoservicio — Bombeo por tipo de vehículo**")
+        tabla_bombeo = pd.DataFrame([
+            [tipo.title(), bombeo_as[tipo], f"Random.Exponential({bombeo_as[tipo]})"]
+            for tipo in tipos
+        ], columns=["Tipo", "Promedio (s)", "Expresión Simio"])
+        st.dataframe(tabla_bombeo, hide_index=True, use_container_width=True)
+
+        st.markdown("**🟠 Shell Select**")
+        tabla_sh = pd.DataFrame([
+            ["Estancia", mu_shell, f"Random.Exponential({mu_shell})"],
+        ], columns=["Variable", "Promedio (s)", "Expresión Simio"])
+        st.dataframe(tabla_sh, hide_index=True, use_container_width=True)
+
+    with col2:
+        st.markdown("**🟢 Servicio Completo — Llegadas**")
+        tabla_arr_sc = pd.DataFrame([
+            ["Inter-arrival SC", mu_arr_sc, f"Random.Exponential({mu_arr_sc})"],
+        ], columns=["Variable", "Promedio (s)", "Expresión Simio"])
+        st.dataframe(tabla_arr_sc, hide_index=True, use_container_width=True)
+
+
+        st.markdown("**🟢 Servicio Completo — Tiempo total por tipo de vehículo**")
+        tabla_sc = pd.DataFrame([
+            [tipo.title(), tiempo_sc[tipo], f"Random.Exponential({tiempo_sc[tipo]})"]
+            for tipo in tipos
+        ], columns=["Tipo", "Promedio (s)", "Expresión Simio"])
+        st.dataframe(tabla_sc, hide_index=True, use_container_width=True)
+
+        st.markdown("**🚗 Probabilidades de tipo de vehículo — AS**")
+        tabla_prop_as = pd.DataFrame({
+            "Tipo":             prop_as.index,
+            "Probabilidad (%)": prop_as.values
+        })
+        st.dataframe(tabla_prop_as, hide_index=True, use_container_width=True)
+
+        st.markdown("**🚗 Probabilidades de tipo de vehículo — SC**")
+        tabla_prop_sc = pd.DataFrame({
+            "Tipo":             prop_sc.index,
+            "Probabilidad (%)": prop_sc.values
+        })
+        st.dataframe(tabla_prop_sc, hide_index=True, use_container_width=True)
+
 else:
     st.info("Sube el archivo Excel para comenzar.")
