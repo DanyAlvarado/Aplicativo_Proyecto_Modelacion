@@ -1,4 +1,16 @@
+# Entorno virtual
 venv/
+env/
+.env/
+
+# Python
 __pycache__/
-.ipynb_checkpoints/
-.env
+*.pyc
+*.pyo
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+
+# Streamlit
+.streamlit/secrets.toml
