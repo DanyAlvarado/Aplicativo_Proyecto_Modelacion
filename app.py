@@ -6,11 +6,11 @@ from scipy.stats import expon
 
 st.set_page_config(
     page_title="Simulación Gasolinera Shell",
-    page_icon="⛽",
+    page_icon="",
     layout="wide"
 )
 
-st.title("⛽ Gasolinera Shell — Análisis para Simulación")
+st.title(" Gasolinera Shell — Análisis para Simulación")
 st.markdown("Carga el archivo Excel estandarizado para obtener los parámetros del modelo en Simio.")
 
 archivo = st.file_uploader("Selecciona el archivo Excel", type=["xlsx"])
@@ -46,21 +46,26 @@ if archivo:
             sc_df[sc_df["Tipo Vehículo"] == tipo]["T. Llegada (s)"]
         )
 
-    # ── AS: Posicionamiento, Pago y Bombeo ──
+    # ── AS: Posicionamiento, Pago PATS y Bombeo por tipo ──
+    # El pago PATS no depende del tipo de vehículo
     pos_as, bombeo_as = {}, {}
     for tipo in tipos:
         filtro = as_df[as_df["Tipo Vehículo"] == tipo]
-        pos_as[tipo]    = promedio(filtro["T. Posicionamiento"])
+        pos_as[tipo]    = promedio(filtro["T. Posicionamiento (s)"])
         bombeo_as[tipo] = promedio(filtro["T. Bombeo (s)"])
 
-    mu_pago = promedio(as_df["T. Pago PATS (s)"])
+    mu_pago_as = promedio(as_df["T. Pago PATS (s)"])
 
-    # ── SC: Tiempo total por tipo ──
-    total_sc = {}
+    # ── SC: Posicionamiento (ESC), Bombeo y Pago SC por tipo ──
+    # El pago SC se calcula general Y por tipo de vehículo
+    pos_sc, bombeo_sc, pago_sc = {}, {}, {}
     for tipo in tipos:
-        total_sc[tipo] = promedio(
-            sc_df[sc_df["Tipo Vehículo"] == tipo]["T. Total Servicio (s)"]
-        )
+        filtro = sc_df[sc_df["Tipo Vehículo"] == tipo]
+        pos_sc[tipo]    = promedio(filtro["T. Posicionamiento (s)"])
+        bombeo_sc[tipo] = promedio(filtro["T. Bombeo (s)"])
+        pago_sc[tipo]   = promedio(filtro["T. Pago SC (s)"])
+
+    mu_pago_sc = promedio(sc_df["T. Pago SC (s)"])
 
     # ── Shell Select ──
     mu_shell = promedio(sh_df["T. Estancia (s)"])
@@ -69,56 +74,76 @@ if archivo:
     # MOSTRAR RESULTADOS
     # ══════════════════════════════════════════
     st.divider()
-    st.subheader("📊 Parámetros para Simio — Distribuciones Exponenciales")
+    st.subheader("Parámetros para Simio — Distribuciones Exponenciales")
     st.caption("Todos los tiempos en segundos · Expresión en Simio: Random.Exponential(promedio)")
 
     col1, col2 = st.columns(2)
 
     with col1:
-        st.markdown("**🔵 Autoservicio — Inter-arrival por Source**")
+        st.markdown("**Autoservicio — Inter-arrival por Source**")
         st.dataframe(pd.DataFrame([
             [f"{t.title()}_AS", ia_as[t], f"Random.Exponential({ia_as[t]})"]
             for t in tipos
         ], columns=["Source", "Promedio (s)", "Expresión Simio"]),
         hide_index=True, use_container_width=True)
 
-        st.markdown("**🔵 Autoservicio — Posicionamiento en EAS por tipo**")
+        st.markdown("**Autoservicio — Posicionamiento (EAS) por tipo**")
         st.dataframe(pd.DataFrame([
             [t.title(), pos_as[t], f"Random.Exponential({pos_as[t]})"]
             for t in tipos
         ], columns=["Tipo", "Promedio (s)", "Expresión Simio"]),
         hide_index=True, use_container_width=True)
 
-        st.markdown("**🔵 Autoservicio — Tiempo de Pago PATS**")
+        st.markdown("**Autoservicio — Pago PATS**")
         st.dataframe(pd.DataFrame([
-            ["Todos los tipos", mu_pago, f"Random.Exponential({mu_pago})"]
+            ["Todos los tipos", mu_pago_as, f"Random.Exponential({mu_pago_as})"]
         ], columns=["Aplica a", "Promedio (s)", "Expresión Simio"]),
         hide_index=True, use_container_width=True)
 
-        st.markdown("**🔵 Autoservicio — Bombeo por tipo**")
+        st.markdown("**Autoservicio — Bombeo por tipo**")
         st.dataframe(pd.DataFrame([
             [t.title(), bombeo_as[t], f"Random.Exponential({bombeo_as[t]})"]
             for t in tipos
         ], columns=["Tipo", "Promedio (s)", "Expresión Simio"]),
         hide_index=True, use_container_width=True)
 
-        st.markdown("**🟠 Shell Select — Tiempo de estancia**")
+        st.markdown("**Shell Select — Tiempo de estancia**")
         st.dataframe(pd.DataFrame([
             ["Todos los tipos", mu_shell, f"Random.Exponential({mu_shell})"]
         ], columns=["Aplica a", "Promedio (s)", "Expresión Simio"]),
         hide_index=True, use_container_width=True)
 
     with col2:
-        st.markdown("**🟢 Servicio Completo — Inter-arrival por Source**")
+        st.markdown("**Servicio Completo — Inter-arrival por Source**")
         st.dataframe(pd.DataFrame([
             [f"{t.title()}_SC", ia_sc[t], f"Random.Exponential({ia_sc[t]})"]
             for t in tipos
         ], columns=["Source", "Promedio (s)", "Expresión Simio"]),
         hide_index=True, use_container_width=True)
 
-        st.markdown("**🟢 Servicio Completo — Tiempo total por tipo**")
+        st.markdown("**Servicio Completo — Posicionamiento (ESC) por tipo**")
         st.dataframe(pd.DataFrame([
-            [t.title(), total_sc[t], f"Random.Exponential({total_sc[t]})"]
+            [t.title(), pos_sc[t], f"Random.Exponential({pos_sc[t]})"]
+            for t in tipos
+        ], columns=["Tipo", "Promedio (s)", "Expresión Simio"]),
+        hide_index=True, use_container_width=True)
+
+        st.markdown("**Servicio Completo — Bombeo por tipo**")
+        st.dataframe(pd.DataFrame([
+            [t.title(), bombeo_sc[t], f"Random.Exponential({bombeo_sc[t]})"]
+            for t in tipos
+        ], columns=["Tipo", "Promedio (s)", "Expresión Simio"]),
+        hide_index=True, use_container_width=True)
+
+        st.markdown("**Servicio Completo — Pago SC (general)**")
+        st.dataframe(pd.DataFrame([
+            ["Todos los tipos", mu_pago_sc, f"Random.Exponential({mu_pago_sc})"]
+        ], columns=["Aplica a", "Promedio (s)", "Expresión Simio"]),
+        hide_index=True, use_container_width=True)
+
+        st.markdown("**Servicio Completo — Pago SC por tipo**")
+        st.dataframe(pd.DataFrame([
+            [t.title(), pago_sc[t], f"Random.Exponential({pago_sc[t]})"]
             for t in tipos
         ], columns=["Tipo", "Promedio (s)", "Expresión Simio"]),
         hide_index=True, use_container_width=True)
@@ -127,7 +152,7 @@ if archivo:
     # GRÁFICAS
     # ══════════════════════════════════════════
     st.divider()
-    if st.button("📈 Ver gráficas de distribuciones"):
+    if st.button("Ver gráficas de distribuciones"):
 
         def grafica_hist(ax, datos, media, titulo, color):
             """
@@ -180,8 +205,8 @@ if archivo:
         fig2.patch.set_facecolor('#FAFAFA')
         for idx, tipo in enumerate(tipos):
             grafica_hist(axes2[idx],
-                         as_df[as_df["Tipo Vehículo"] == tipo]["T. Posicionamiento"],
-                         pos_as[tipo], f"Posic. — {tipo.title()}", C_AS)
+                         as_df[as_df["Tipo Vehículo"] == tipo]["T. Posicionamiento (s)"],
+                         pos_as[tipo], f"Posic. AS — {tipo.title()}", C_AS)
         plt.tight_layout()
         st.pyplot(fig2)
         plt.close()
@@ -193,41 +218,65 @@ if archivo:
         for idx, tipo in enumerate(tipos):
             grafica_hist(axes3[idx],
                          as_df[as_df["Tipo Vehículo"] == tipo]["T. Bombeo (s)"],
-                         bombeo_as[tipo], f"Bombeo — {tipo.title()}", C_AS)
+                         bombeo_as[tipo], f"Bombeo AS — {tipo.title()}", C_AS)
         plt.tight_layout()
         st.pyplot(fig3)
         plt.close()
 
         # Gráfica 4 — Pago PATS
         st.markdown("**Autoservicio — Pago PATS**")
-        fig4, axes4 = plt.subplots(1, 1, figsize=(5, 4))
+        fig4, ax4 = plt.subplots(1, 1, figsize=(5, 4))
         fig4.patch.set_facecolor('#FAFAFA')
-        grafica_hist(axes4, as_df["T. Pago PATS (s)"],
-                     mu_pago, "Pago PATS — Todos", C_AS)
+        grafica_hist(ax4, as_df["T. Pago PATS (s)"],
+                     mu_pago_as, "Pago PATS — Todos", C_AS)
         plt.tight_layout()
         st.pyplot(fig4)
         plt.close()
 
-        # Gráfica 5 — Tiempo total SC por tipo
-        st.markdown("**Servicio Completo — Tiempo total por tipo**")
+        # Gráfica 5 — Posicionamiento SC por tipo
+        st.markdown("**Servicio Completo — Posicionamiento (ESC) por tipo**")
         fig5, axes5 = plt.subplots(1, 4, figsize=(16, 4))
         fig5.patch.set_facecolor('#FAFAFA')
         for idx, tipo in enumerate(tipos):
             grafica_hist(axes5[idx],
-                         sc_df[sc_df["Tipo Vehículo"] == tipo]["T. Total Servicio (s)"],
-                         total_sc[tipo], f"SC — {tipo.title()}", C_SC)
+                         sc_df[sc_df["Tipo Vehículo"] == tipo]["T. Posicionamiento (s)"],
+                         pos_sc[tipo], f"Posic. SC — {tipo.title()}", C_SC)
         plt.tight_layout()
         st.pyplot(fig5)
         plt.close()
 
-        # Gráfica 6 — Shell Select
-        st.markdown("**Shell Select — Tiempo de estancia**")
-        fig6, axes6 = plt.subplots(1, 1, figsize=(5, 4))
+        # Gráfica 6 — Bombeo SC por tipo
+        st.markdown("**Servicio Completo — Bombeo por tipo**")
+        fig6, axes6 = plt.subplots(1, 4, figsize=(16, 4))
         fig6.patch.set_facecolor('#FAFAFA')
-        grafica_hist(axes6, sh_df["T. Estancia (s)"],
-                     mu_shell, "Shell Select", C_SHELL)
+        for idx, tipo in enumerate(tipos):
+            grafica_hist(axes6[idx],
+                         sc_df[sc_df["Tipo Vehículo"] == tipo]["T. Bombeo (s)"],
+                         bombeo_sc[tipo], f"Bombeo SC — {tipo.title()}", C_SC)
         plt.tight_layout()
         st.pyplot(fig6)
+        plt.close()
+
+        # Gráfica 7 — Pago SC por tipo
+        st.markdown("**Servicio Completo — Pago SC por tipo**")
+        fig7, axes7 = plt.subplots(1, 4, figsize=(16, 4))
+        fig7.patch.set_facecolor('#FAFAFA')
+        for idx, tipo in enumerate(tipos):
+            grafica_hist(axes7[idx],
+                         sc_df[sc_df["Tipo Vehículo"] == tipo]["T. Pago SC (s)"],
+                         pago_sc[tipo], f"Pago SC — {tipo.title()}", C_SC)
+        plt.tight_layout()
+        st.pyplot(fig7)
+        plt.close()
+
+        # Gráfica 8 — Shell Select
+        st.markdown("**Shell Select — Tiempo de estancia**")
+        fig8, ax8 = plt.subplots(1, 1, figsize=(5, 4))
+        fig8.patch.set_facecolor('#FAFAFA')
+        grafica_hist(ax8, sh_df["T. Estancia (s)"],
+                     mu_shell, "Shell Select", C_SHELL)
+        plt.tight_layout()
+        st.pyplot(fig8)
         plt.close()
 
 else:
